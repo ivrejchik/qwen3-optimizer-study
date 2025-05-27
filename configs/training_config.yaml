@@ -1,0 +1,111 @@
+# Training Configuration for Qwen3 Optimizer Comparison
+
+# Model configuration
+model:
+  name: "Qwen/Qwen2.5-7B-Instruct"
+  local_path: "./models/qwen3_8b"
+  trust_remote_code: true
+  torch_dtype: "bfloat16"
+  quantization:
+    load_in_8bit: true
+    device_map: "auto"
+
+# LoRA configuration
+lora:
+  r: 8                    # Rank
+  alpha: 32              # Alpha parameter
+  dropout: 0.05          # Dropout rate
+  bias: "none"           # Bias type
+  target_modules:        # Target modules for Qwen
+    - "q_proj"
+    - "v_proj"
+    - "k_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+
+# Training hyperparameters
+training:
+  num_epochs: 3
+  learning_rate: 1e-5
+  batch_size: 8
+  gradient_accumulation_steps: 2
+  warmup_steps: 100
+  max_length: 1024
+  
+  # Mixed precision
+  bf16: true
+  fp16: false
+  
+  # Logging and saving
+  logging_steps: 20
+  save_strategy: "epoch"
+  evaluation_strategy: "epoch"
+  save_total_limit: 2
+  load_best_model_at_end: true
+  metric_for_best_model: "eval_accuracy"
+  greater_is_better: true
+  
+  # Reproducibility
+  seed: 42
+  data_seed: 42
+
+# Optimizer-specific configurations
+optimizers:
+  adamw:
+    lr: 1e-5
+    weight_decay: 0.01
+    betas: [0.9, 0.999]
+    eps: 1e-8
+  
+  sgd:
+    lr: 1e-5
+    momentum: 0.9
+    weight_decay: 0.01
+    nesterov: false
+  
+  adabound:
+    lr: 1e-5
+    final_lr: 0.1
+    gamma: 1e-3
+    weight_decay: 0.01
+
+# Dataset configuration
+dataset:
+  name: "tau/commonsense_qa"
+  local_path: "./data/commonsense_qa"
+  train_split: "train"
+  validation_split: "validation"
+  test_split: "validation"  # Use validation as test
+  
+# Hardware optimization
+hardware:
+  # Memory optimization
+  dataloader_pin_memory: false
+  remove_unused_columns: false
+  
+  # Performance tuning
+  dataloader_num_workers: 4
+  group_by_length: false
+  
+# Evaluation configuration
+evaluation:
+  max_examples: null      # Set to number for testing, null for full evaluation
+  batch_size: 1          # Evaluation batch size
+  max_new_tokens: 1      # For multiple choice, only need 1 token
+  temperature: 0.0       # Deterministic generation
+  do_sample: false       # No sampling for evaluation
+
+# Output configuration
+output:
+  base_dir: "./experiments"
+  results_dir: "./results"
+  logs_dir: "./logs"
+  
+# Reporting
+reporting:
+  tensorboard: true
+  wandb: false           # Set to true if you want W&B logging
+  csv_results: true
+  markdown_summary: true 
