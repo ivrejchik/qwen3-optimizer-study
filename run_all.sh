@@ -128,13 +128,13 @@ phase1_data() {
 # Phase 2: LoRA Fine-tuning
 phase2_training() {
     print_header "Phase 2: LoRA Fine-tuning"
-    
+
     # Create experiment directories
-    mkdir -p experiments/{adamw,sgd,adabound}
-    
-    # Training jobs
-    optimizers=("adamw" "sgd" "adabound")
-    
+    mkdir -p experiments/{adamw,sgd,adabound,hybrid}
+
+    # Training jobs (including new hybrid optimizer)
+    optimizers=("adamw" "sgd" "adabound" "hybrid")
+
     for optimizer in "${optimizers[@]}"; do
         echo -e "${YELLOW}Training with $optimizer optimizer...${NC}"
         python phases/2_train.py \
@@ -143,7 +143,7 @@ phase2_training() {
             --seed $SEED
         print_success "$optimizer training completed"
     done
-    
+
     print_success "All training jobs completed"
 }
 
@@ -164,13 +164,15 @@ phase4_evaluation() {
 # Phase 5: Analysis and Reporting
 phase5_analysis() {
     print_header "Phase 5: Analysis & Reporting"
-    
+
     # Generate plots and analysis
     if [[ -f "utils/analyze_results.py" ]]; then
-        python utils/analyze_results.py
+        python utils/analyze_results.py \
+            --optimizers adamw sgd adabound hybrid \
+            --experiments_dir ./experiments
         print_success "Analysis completed"
     fi
-    
+
     # Show results summary
     if [[ -f "results/results.csv" ]]; then
         echo -e "${GREEN}Results Summary:${NC}"
@@ -182,6 +184,12 @@ print(f'\nBest performing optimizer: {df.loc[df[\"accuracy\"].idxmax(), \"model\
 print(f'Best accuracy: {df[\"accuracy\"].max():.4f}')
 "
     fi
+
+    # Display link to interactive visualizations
+    echo -e "\n${GREEN}Interactive visualizations available in:${NC}"
+    echo "  - results/analysis/interactive_radar.html"
+    echo "  - results/analysis/gpu_timeline.html"
+    echo "  - results/analysis/training_loss_comparison.html"
 }
 
 # Error handling

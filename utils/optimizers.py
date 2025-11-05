@@ -6,6 +6,7 @@ from typing import Dict, Any, Type
 import torch
 from transformers.optimization import AdamW
 from adabound import AdaBound
+from .hybrid_adam_sgd import AdamSGDHybrid
 
 
 class SGDMomentum(torch.optim.SGD):
@@ -48,6 +49,20 @@ class OptimizerConfig:
                 "weight_decay": 0.01
             },
             "description": "AdaBound: Smooth transition from Adam to SGD"
+        },
+        "hybrid": {
+            "class": AdamSGDHybrid,
+            "default_params": {
+                "lr": 1e-5,
+                "beta1": 0.9,
+                "beta2": 0.999,
+                "momentum": 0.9,
+                "eps": 1e-8,
+                "weight_decay": 0.01,
+                "transition_steps": 1000,
+                "final_ratio": 0.1
+            },
+            "description": "Hybrid Adam+SGD: Dynamic blend of Adam adaptivity and SGD stability"
         }
     }
     
@@ -97,9 +112,9 @@ def get_optimizer_recommendations() -> Dict[str, Dict[str, Any]]:
     """Get recommendations for different use cases."""
     return {
         "accuracy_focused": {
-            "optimizer": "adabound",
-            "reason": "Combines benefits of Adam and SGD for potentially better convergence",
-            "params": {"lr": 1e-5, "final_lr": 0.1}
+            "optimizer": "hybrid",
+            "reason": "Dynamic blending of Adam and SGD for optimal convergence and stability",
+            "params": {"lr": 1e-5, "transition_steps": 1000, "final_ratio": 0.1}
         },
         "speed_focused": {
             "optimizer": "sgd",
@@ -115,6 +130,11 @@ def get_optimizer_recommendations() -> Dict[str, Dict[str, Any]]:
             "optimizer": "sgd",
             "reason": "Lower memory footprint compared to adaptive methods",
             "params": {"lr": 1e-5, "momentum": 0.9}
+        },
+        "research_novel": {
+            "optimizer": "hybrid",
+            "reason": "Novel approach combining best of both worlds - fast early convergence with stable final performance",
+            "params": {"lr": 1e-5, "transition_steps": 1000}
         }
     }
 
@@ -166,5 +186,12 @@ def compare_optimizers_theoretical() -> Dict[str, Dict[str, str]]:
             "stability": "Designed to be more stable than Adam",
             "hyperparams": "Less sensitive than SGD, more robust than Adam",
             "best_for": "When you want the best of both worlds"
+        },
+        "hybrid": {
+            "convergence": "Dynamic transition: Adam-like initially, SGD-like finally",
+            "memory": "Highest (stores both Adam moments and SGD momentum)",
+            "stability": "Adaptive stability increasing over training",
+            "hyperparams": "Moderate sensitivity, configurable transition",
+            "best_for": "Research and when optimal convergence + stability is critical"
         }
     } 

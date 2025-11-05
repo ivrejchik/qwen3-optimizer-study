@@ -1,14 +1,23 @@
 # Qwen3 Optimizer Comparison Study
 
-A comprehensive benchmarking framework comparing AdamW, SGD+Momentum, and AdaBound optimizers for fine-tuning Qwen3-8B on CommonsenseQA.
+A state-of-the-art benchmarking framework comparing AdamW, SGD+Momentum, AdaBound, and a novel Hybrid Adam+SGD optimizer for fine-tuning Qwen2.5-7B on CommonsenseQA.
 
 ## 🎯 Overview
 
-This repository implements a six-phase pipeline to systematically compare different optimizers when fine-tuning large language models using LoRA (Low-Rank Adaptation). The study evaluates:
+This repository implements a comprehensive six-phase pipeline to systematically compare different optimizers when fine-tuning large language models using LoRA (Low-Rank Adaptation). The study evaluates:
 
-- **AdamW**: Adaptive moment estimation with weight decay
+- **AdamW**: Adaptive moment estimation with weight decay (baseline)
 - **SGD + Momentum**: Stochastic gradient descent with momentum
 - **AdaBound**: Smooth transition from Adam to SGD
+- **Hybrid Adam+SGD** (NEW): Novel optimizer dynamically blending Adam's adaptivity with SGD's stability
+
+## ✨ New Features
+
+- 🔥 **Hybrid Adam+SGD Optimizer**: Research-grade implementation combining best of both worlds
+- 📊 **GPU Timeline Tracking**: Real-time GPU memory and utilization monitoring during training
+- 🎨 **Interactive Visualizations**: Plotly-powered interactive charts (radar plots, GPU timelines, loss curves)
+- 🤗 **HuggingFace Benchmark Format**: Auto-generated benchmark-compatible JSON outputs
+- 📈 **Enhanced Analytics**: Comprehensive performance metrics with multiple visualization types
 
 ## 🚀 Quick Start
 
@@ -57,18 +66,25 @@ qwen3-optimizer-study/
 ├── phases/                 # Modular pipeline scripts
 │   ├── 0_env.sh           # Environment setup
 │   ├── 1_data.py          # Data acquisition
-│   ├── 2_train.py         # LoRA training script
+│   ├── 2_train.py         # LoRA training (with GPU tracking)
 │   ├── 3_merge.py         # Adapter merging
-│   └── 4_eval.py          # Model evaluation
+│   └── 4_eval.py          # Model evaluation (HF benchmark export)
 ├── experiments/           # Training outputs
 │   ├── adamw/
 │   ├── sgd/
-│   └── adabound/
+│   ├── adabound/
+│   └── hybrid/            # NEW: Hybrid optimizer results
 ├── data/                  # Dataset cache
 ├── models/                # Model cache
 ├── results/               # Evaluation outputs
+│   └── analysis/          # Visualizations (PNG + HTML)
 ├── configs/               # Configuration files
+│   └── training_config.yaml  # All optimizer configs
 ├── utils/                 # Helper utilities
+│   ├── optimizers.py      # Optimizer registry
+│   ├── hybrid_adam_sgd.py # NEW: Hybrid optimizer implementation
+│   └── analyze_results.py # Enhanced with GPU timeline & radar plots
+├── tests/                 # Unit tests (pytest)
 └── notebooks/             # Analysis notebooks
 ```
 
@@ -87,10 +103,12 @@ Downloads and caches CommonsenseQA dataset and Qwen3-8B model.
 
 ### Phase 2: LoRA Fine-tuning
 ```bash
-python phases/2_train.py adamw ./experiments/adamw
-python phases/2_train.py sgd ./experiments/sgd  
-python phases/2_train.py adabound ./experiments/adabound
+python phases/2_train.py --optimizer adamw --output_dir ./experiments/adamw
+python phases/2_train.py --optimizer sgd --output_dir ./experiments/sgd
+python phases/2_train.py --optimizer adabound --output_dir ./experiments/adabound
+python phases/2_train.py --optimizer hybrid --output_dir ./experiments/hybrid  # NEW!
 ```
+Training now includes GPU tracking and saves metrics to `gpu_metrics.json`.
 
 ### Phase 3: Adapter Merging
 ```bash
@@ -102,16 +120,24 @@ python phases/3_merge.py
 python phases/4_eval.py
 ```
 
-### Phase 5: Analysis
-Results are automatically saved to `results.csv` and visualized in the analysis notebook.
+### Phase 5: Analysis & Visualization
+```bash
+python utils/analyze_results.py
+```
+Generates comprehensive visualizations including:
+- Static plots (accuracy comparison, performance metrics, radar charts)
+- Interactive HTML visualizations (GPU timeline, training loss comparison)
+- HuggingFace benchmark-compatible JSON outputs
 
 ## 📈 Expected Results
 
 The pipeline generates:
 - **Accuracy scores** on CommonsenseQA validation set
-- **Training metrics** (loss curves, memory usage)
+- **Training metrics** (loss curves, memory usage, GPU utilization)
 - **Inference speed** comparisons
-- **Resource utilization** logs
+- **Resource utilization** logs with GPU timeline tracking
+- **Interactive visualizations** (HTML + PNG formats)
+- **HuggingFace benchmark JSON** files for each optimizer
 
 ## 🔧 Configuration
 
@@ -120,6 +146,30 @@ Edit `configs/training_config.yaml` to adjust:
 - Batch sizes
 - LoRA parameters
 - Training epochs
+- Optimizer-specific parameters (including hybrid transition settings)
+
+## 🔬 Hybrid Adam+SGD Optimizer
+
+The novel hybrid optimizer dynamically blends Adam and SGD behaviors:
+
+**Key Features**:
+- Starts with Adam-like adaptive learning (fast initial convergence)
+- Gradually transitions to SGD-like momentum (stable final performance)
+- Configurable transition schedule via `transition_steps`
+- Configurable final blend ratio via `final_ratio`
+
+**Configuration** (in `configs/training_config.yaml`):
+```yaml
+hybrid:
+  lr: 1e-5
+  beta1: 0.9           # Adam first moment decay
+  beta2: 0.999         # Adam second moment decay
+  momentum: 0.9        # SGD momentum factor
+  transition_steps: 1000  # Steps to transition from Adam to SGD
+  final_ratio: 0.1     # Final Adam ratio (0.1 = 10% Adam, 90% SGD)
+```
+
+**Theory**: Combines the fast early convergence of adaptive methods with the better generalization of momentum-based methods.
 
 ## 🎨 Customization
 

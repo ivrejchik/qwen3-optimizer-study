@@ -14,6 +14,8 @@ from typing import Dict, Any
 
 import torch
 import numpy as np
+import psutil
+import GPUtil
 from datasets import load_from_disk
 from transformers import (
     AutoModelForCausalLM,
@@ -34,6 +36,11 @@ import evaluate
 import bitsandbytes as bnb
 from adabound import AdaBound
 
+# Import hybrid optimizer
+import sys
+sys.path.append(str(Path(__file__).parent.parent))
+from utils.hybrid_adam_sgd import AdamSGDHybrid
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
@@ -51,13 +58,90 @@ def get_optimizer_class(optimizer_name: str):
     optimizers = {
         "adamw": AdamW,
         "sgd": SGDMomentum,
-        "adabound": AdaBound
+        "adabound": AdaBound,
+        "hybrid": AdamSGDHybrid
     }
-    
+
     if optimizer_name not in optimizers:
         raise ValueError(f"Unknown optimizer: {optimizer_name}. Available: {list(optimizers.keys())}")
-    
+
     return optimizers[optimizer_name]
+
+
+def get_gpu_metrics():
+    """Get current GPU metrics."""
+    try:
+        gpus = GPUtil.getGPUs()
+        if gpus:
+            gpu = gpus[0]  # Get first GPU
+            return {
+                "gpu_memory_used_mb": gpu.memoryUsed,
+                "gpu_memory_total_mb": gpu.memoryTotal,
+                "gpu_memory_percent": gpu.memoryUtil * 100,
+                "gpu_utilization_percent": gpu.load * 100,
+                "gpu_temperature": gpu.temperature
+            }
+    except Exception as e:
+        logger.warning(f"Failed to get GPU metrics: {e}")
+    return {}
+
+
+def get_system_metrics():
+    """Get current system metrics."""
+    try:
+        cpu_percent = psutil.cpu_percent(interval=0.1)
+        memory = psutil.virtual_memory()
+        return {
+            "cpu_percent": cpu_percent,
+            "ram_used_gb": memory.used / (1024**3),
+            "ram_percent": memory.percent
+        }
+    except Exception as e:
+        logger.warning(f"Failed to get system metrics: {e}")
+    return {}
+
+
+class MetricsTrackingCallback:
+    """Callback to track GPU and system metrics during training."""
+
+    def __init__(self, output_dir: str):
+        self.output_dir = output_dir
+        self.metrics_log = []
+        self.start_time = time.time()
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        """Called when logging occurs."""
+        current_time = time.time() - self.start_time
+
+        # Collect metrics
+        metrics = {
+            "timestamp": current_time,
+            "step": state.global_step,
+            "epoch": state.epoch,
+        }
+
+        # Add training logs
+        if logs:
+            metrics.update(logs)
+
+        # Add GPU metrics
+        gpu_metrics = get_gpu_metrics()
+        metrics.update(gpu_metrics)
+
+        # Add system metrics
+        system_metrics = get_system_metrics()
+        metrics.update(system_metrics)
+
+        self.metrics_log.append(metrics)
+
+    def on_train_end(self, args, state, control, **kwargs):
+        """Called at the end of training."""
+        # Save metrics log
+        metrics_path = Path(self.output_dir) / "gpu_metrics.json"
+        with open(metrics_path, "w") as f:
+            json.dump(self.metrics_log, f, indent=2)
+        logger.info(f"GPU metrics saved to: {metrics_path}")
+
 
 def create_prompt(example: Dict[str, Any]) -> str:
     """Create a formatted prompt from a CommonsenseQA example."""
@@ -231,15 +315,25 @@ def train_model(
     # Custom optimizer instantiation
     def optimizer_init():
         optimizer_kwargs = {"lr": learning_rate}
-        
+
         if optimizer_name == "sgd":
             optimizer_kwargs["momentum"] = 0.9
         elif optimizer_name == "adabound":
             optimizer_kwargs["final_lr"] = 0.1
             optimizer_kwargs["gamma"] = 1e-3
-        
+        elif optimizer_name == "hybrid":
+            optimizer_kwargs["beta1"] = 0.9
+            optimizer_kwargs["beta2"] = 0.999
+            optimizer_kwargs["momentum"] = 0.9
+            optimizer_kwargs["weight_decay"] = 0.01
+            optimizer_kwargs["transition_steps"] = 1000
+            optimizer_kwargs["final_ratio"] = 0.1
+
         return optimizer_class(model.parameters(), **optimizer_kwargs)
-    
+
+    # Create metrics tracking callback
+    metrics_callback = MetricsTrackingCallback(output_dir)
+
     # Create trainer
     trainer = Trainer(
         model=model,
@@ -249,7 +343,8 @@ def train_model(
         tokenizer=tokenizer,
         data_collator=data_collator,
         compute_metrics=compute_metrics,
-        optimizers=(optimizer_init(), None)  # (optimizer, scheduler)
+        optimizers=(optimizer_init(), None),  # (optimizer, scheduler)
+        callbacks=[metrics_callback]
     )
     
     # Train
@@ -260,6 +355,10 @@ def train_model(
     # Save final model
     trainer.save_model(f"{output_dir}/final")
     
+    # Get final GPU metrics
+    final_gpu_metrics = get_gpu_metrics()
+    final_system_metrics = get_system_metrics()
+
     # Save training metrics
     metrics = {
         "optimizer": optimizer_name,
@@ -270,8 +369,11 @@ def train_model(
         "num_epochs": num_epochs,
         "batch_size": batch_size,
         "gradient_accumulation_steps": gradient_accumulation_steps,
+        "peak_gpu_memory_mb": final_gpu_metrics.get("gpu_memory_used_mb", None),
+        "peak_gpu_memory_percent": final_gpu_metrics.get("gpu_memory_percent", None),
+        "final_gpu_utilization": final_gpu_metrics.get("gpu_utilization_percent", None),
     }
-    
+
     with open(f"{output_dir}/training_metrics.json", "w") as f:
         json.dump(metrics, f, indent=2)
     
@@ -282,8 +384,8 @@ def train_model(
 
 def main():
     parser = argparse.ArgumentParser(description="Train LoRA model with different optimizers")
-    parser.add_argument("--optimizer", 
-                       choices=["adamw", "sgd", "adabound"],
+    parser.add_argument("--optimizer",
+                       choices=["adamw", "sgd", "adabound", "hybrid"],
                        required=True,
                        help="Optimizer to use")
     parser.add_argument("--output_dir", required=True, help="Output directory")

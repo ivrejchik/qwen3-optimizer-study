@@ -273,6 +273,47 @@ def create_summary_report(results: List[Dict[str, Any]], output_dir: str):
     
     logger.info(f"Summary report saved to: {report_path}")
 
+
+def save_hf_benchmark_format(results: List[Dict[str, Any]], output_dir: str):
+    """Save results in Hugging Face benchmark format for potential submission."""
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    for result in results:
+        benchmark_data = {
+            "model_name": result["model"],
+            "model_path": result["model_path"],
+            "benchmark": "commonsense_qa",
+            "metrics": {
+                "accuracy": result["accuracy"],
+                "evaluation_time": result["evaluation_time_seconds"],
+                "throughput_items_per_sec": result["items_per_second"],
+            },
+            "hardware": {
+                "gpu_memory_used_mb": result["gpu_memory_used_mb"],
+                "gpu_memory_total_mb": result["gpu_memory_total_mb"],
+                "cpu_percent_avg": result["cpu_percent_avg"],
+            },
+            "per_choice_accuracy": {
+                choice: result.get(f"accuracy_{choice}", 0.0)
+                for choice in ["A", "B", "C", "D", "E"]
+            },
+            "metadata": {
+                "total_examples": result["total_examples"],
+                "correct_predictions": result["correct_predictions"],
+                "framework": "transformers",
+                "task_type": "multiple_choice_qa",
+            }
+        }
+
+        # Save individual benchmark file
+        benchmark_file = output_path / f"hf_benchmark_{result['model']}.json"
+        with open(benchmark_file, "w") as f:
+            json.dump(benchmark_data, f, indent=2)
+
+    logger.info(f"HuggingFace benchmark format saved to: {output_path}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Evaluate models on CommonsenseQA")
     parser.add_argument("--data_path", default="./data/commonsense_qa", 
@@ -283,8 +324,8 @@ def main():
                        help="Directory containing experiment results")
     parser.add_argument("--output_dir", default="./results", 
                        help="Output directory for results")
-    parser.add_argument("--optimizers", nargs="+", 
-                       default=["adamw", "sgd", "adabound"],
+    parser.add_argument("--optimizers", nargs="+",
+                       default=["adamw", "sgd", "adabound", "hybrid"],
                        help="Optimizers to evaluate")
     parser.add_argument("--include_baseline", action="store_true", 
                        help="Include baseline model evaluation")
@@ -355,6 +396,7 @@ def main():
     # Save results
     csv_path = save_detailed_results(all_results, args.output_dir)
     create_summary_report(all_results, args.output_dir)
+    save_hf_benchmark_format(all_results, args.output_dir)
     
     # Print summary
     logger.info("Evaluation Summary:")
