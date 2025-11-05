@@ -9,9 +9,13 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots
 import json
 from pathlib import Path
 import logging
+from typing import List, Dict, Any
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -261,6 +265,205 @@ def create_summary_table(df: pd.DataFrame, output_dir: str):
     
     logger.info(f"Markdown table saved to {md_path}")
 
+def create_gpu_timeline(experiments_dir: str, output_dir: str, optimizers: List[str]):
+    """Create GPU utilization timeline from training metrics."""
+    fig = make_subplots(
+        rows=2, cols=1,
+        subplot_titles=('GPU Memory Usage Over Time', 'GPU Utilization Over Time'),
+        vertical_spacing=0.15
+    )
+
+    colors = px.colors.qualitative.Set2
+
+    for i, optimizer in enumerate(optimizers):
+        gpu_metrics_path = Path(experiments_dir) / optimizer / "gpu_metrics.json"
+
+        if not gpu_metrics_path.exists():
+            logger.warning(f"GPU metrics not found for {optimizer}: {gpu_metrics_path}")
+            continue
+
+        try:
+            with open(gpu_metrics_path, 'r') as f:
+                metrics = json.load(f)
+
+            if not metrics:
+                continue
+
+            timestamps = [m['timestamp'] for m in metrics if 'timestamp' in m]
+            gpu_memory = [m.get('gpu_memory_used_mb', 0) for m in metrics]
+            gpu_util = [m.get('gpu_utilization_percent', 0) for m in metrics]
+
+            # Add memory trace
+            fig.add_trace(
+                go.Scatter(
+                    x=timestamps,
+                    y=gpu_memory,
+                    mode='lines',
+                    name=f'{optimizer} (Memory)',
+                    line=dict(color=colors[i % len(colors)], width=2),
+                    legendgroup=optimizer,
+                ),
+                row=1, col=1
+            )
+
+            # Add utilization trace
+            fig.add_trace(
+                go.Scatter(
+                    x=timestamps,
+                    y=gpu_util,
+                    mode='lines',
+                    name=f'{optimizer} (Util)',
+                    line=dict(color=colors[i % len(colors)], width=2),
+                    legendgroup=optimizer,
+                    showlegend=False
+                ),
+                row=2, col=1
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to load GPU metrics for {optimizer}: {e}")
+
+    # Update layout
+    fig.update_xaxes(title_text="Time (seconds)", row=2, col=1)
+    fig.update_yaxes(title_text="Memory (MB)", row=1, col=1)
+    fig.update_yaxes(title_text="Utilization (%)", row=2, col=1)
+
+    fig.update_layout(
+        height=800,
+        title_text="GPU Metrics Timeline During Training",
+        showlegend=True,
+        hovermode='x unified'
+    )
+
+    # Save interactive HTML
+    output_path = Path(output_dir) / 'gpu_timeline.html'
+    fig.write_html(str(output_path))
+    logger.info(f"GPU timeline saved to {output_path}")
+
+    # Also save as PNG
+    try:
+        png_path = Path(output_dir) / 'gpu_timeline.png'
+        fig.write_image(str(png_path), width=1200, height=800)
+        logger.info(f"GPU timeline PNG saved to {png_path}")
+    except Exception as e:
+        logger.warning(f"Could not save PNG (requires kaleido): {e}")
+
+
+def create_interactive_radar(df: pd.DataFrame, output_dir: str):
+    """Create interactive radar chart with plotly."""
+    # Normalize metrics for radar chart
+    metrics = ['accuracy', 'items_per_second']
+
+    # Add GPU memory if available (inverse normalization - less is better)
+    if 'gpu_memory_used_mb' in df.columns:
+        metrics.append('gpu_memory_used_mb')
+
+    # Normalize all metrics
+    df_norm = df.copy()
+    for metric in metrics:
+        min_val = df[metric].min()
+        max_val = df[metric].max()
+        if metric == 'gpu_memory_used_mb':
+            # Invert for memory (less is better)
+            df_norm[f'{metric}_norm'] = 1 - ((df[metric] - min_val) / (max_val - min_val + 1e-10))
+        else:
+            df_norm[f'{metric}_norm'] = (df[metric] - min_val) / (max_val - min_val + 1e-10)
+
+    # Create plotly radar chart
+    fig = go.Figure()
+
+    colors = px.colors.qualitative.Set2
+
+    for i, (_, row) in enumerate(df_norm.iterrows()):
+        values = [row[f'{metric}_norm'] for metric in metrics]
+        values.append(values[0])  # Close the radar
+
+        categories = ['Accuracy', 'Speed']
+        if 'gpu_memory_used_mb' in metrics:
+            categories.append('Memory Efficiency')
+        categories.append(categories[0])
+
+        fig.add_trace(go.Scatterpolar(
+            r=values,
+            theta=categories,
+            fill='toself',
+            name=row['model'],
+            line_color=colors[i % len(colors)]
+        ))
+
+    fig.update_layout(
+        polar=dict(
+            radialaxis=dict(
+                visible=True,
+                range=[0, 1]
+            )
+        ),
+        showlegend=True,
+        title="Interactive Multi-Metric Comparison (Normalized)",
+        height=600
+    )
+
+    # Save interactive HTML
+    output_path = Path(output_dir) / 'interactive_radar.html'
+    fig.write_html(str(output_path))
+    logger.info(f"Interactive radar chart saved to {output_path}")
+
+
+def create_training_comparison(experiments_dir: str, output_dir: str, optimizers: List[str]):
+    """Create training loss comparison from training metrics."""
+    fig = go.Figure()
+
+    colors = px.colors.qualitative.Set2
+
+    for i, optimizer in enumerate(optimizers):
+        metrics_path = Path(experiments_dir) / optimizer / "gpu_metrics.json"
+
+        if not metrics_path.exists():
+            logger.warning(f"Training metrics not found for {optimizer}")
+            continue
+
+        try:
+            with open(metrics_path, 'r') as f:
+                metrics = json.load(f)
+
+            if not metrics:
+                continue
+
+            # Extract loss values
+            steps = []
+            losses = []
+            for m in metrics:
+                if 'step' in m and 'loss' in m:
+                    steps.append(m['step'])
+                    losses.append(m['loss'])
+
+            if steps and losses:
+                fig.add_trace(go.Scatter(
+                    x=steps,
+                    y=losses,
+                    mode='lines+markers',
+                    name=optimizer,
+                    line=dict(color=colors[i % len(colors)], width=2),
+                    marker=dict(size=4)
+                ))
+
+        except Exception as e:
+            logger.error(f"Failed to load training metrics for {optimizer}: {e}")
+
+    fig.update_layout(
+        title="Training Loss Comparison",
+        xaxis_title="Training Step",
+        yaxis_title="Loss",
+        hovermode='x unified',
+        height=500
+    )
+
+    # Save interactive HTML
+    output_path = Path(output_dir) / 'training_loss_comparison.html'
+    fig.write_html(str(output_path))
+    logger.info(f"Training loss comparison saved to {output_path}")
+
+
 def generate_insights(df: pd.DataFrame, output_dir: str):
     """Generate insights and recommendations."""
     insights = []
@@ -318,13 +521,18 @@ def generate_insights(df: pd.DataFrame, output_dir: str):
 
 def main():
     parser = argparse.ArgumentParser(description="Analyze and visualize experiment results")
-    parser.add_argument("--results_file", default="./results/results.csv", 
+    parser.add_argument("--results_file", default="./results/results.csv",
                        help="Path to results CSV file")
-    parser.add_argument("--output_dir", default="./results/analysis", 
+    parser.add_argument("--output_dir", default="./results/analysis",
                        help="Output directory for plots and analysis")
     parser.add_argument("--format", choices=["png", "pdf", "svg"], default="png",
                        help="Output format for plots")
-    
+    parser.add_argument("--experiments_dir", default="./experiments",
+                       help="Directory containing experiment results for GPU metrics")
+    parser.add_argument("--optimizers", nargs="+",
+                       default=["adamw", "sgd", "adabound", "hybrid"],
+                       help="Optimizers to analyze")
+
     args = parser.parse_args()
     
     # Create output directory
@@ -341,6 +549,7 @@ def main():
     
     # Generate all analyses
     try:
+        logger.info("Generating static plots...")
         create_accuracy_comparison(df, args.output_dir)
         create_performance_metrics(df, args.output_dir)
         create_radar_chart(df, args.output_dir)
@@ -348,7 +557,12 @@ def main():
         create_efficiency_analysis(df, args.output_dir)
         create_summary_table(df, args.output_dir)
         generate_insights(df, args.output_dir)
-        
+
+        logger.info("Generating interactive visualizations...")
+        create_interactive_radar(df, args.output_dir)
+        create_gpu_timeline(args.experiments_dir, args.output_dir, args.optimizers)
+        create_training_comparison(args.experiments_dir, args.output_dir, args.optimizers)
+
         logger.info("✓ Analysis completed successfully")
         logger.info(f"Results saved to: {args.output_dir}")
         

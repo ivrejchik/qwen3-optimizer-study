@@ -58,18 +58,28 @@ optimizers:
     weight_decay: 0.01
     betas: [0.9, 0.999]
     eps: 1e-8
-  
+
   sgd:
     lr: 1e-5
     momentum: 0.9
     weight_decay: 0.01
     nesterov: false
-  
+
   adabound:
     lr: 1e-5
     final_lr: 0.1
     gamma: 1e-3
     weight_decay: 0.01
+
+  hybrid:
+    lr: 1e-5
+    beta1: 0.9
+    beta2: 0.999
+    momentum: 0.9
+    eps: 1e-8
+    weight_decay: 0.01
+    transition_steps: 1000
+    final_ratio: 0.1
 
 # Dataset configuration
 dataset:
