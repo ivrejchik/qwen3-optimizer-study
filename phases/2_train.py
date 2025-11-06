@@ -68,22 +68,53 @@ def get_optimizer_class(optimizer_name: str):
     return optimizers[optimizer_name]
 
 
+def get_device():
+    """Detect and return the appropriate device (CUDA, MPS, or CPU)."""
+    if torch.cuda.is_available():
+        return "cuda", "CUDA"
+    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return "mps", "MPS (Apple Silicon)"
+    else:
+        return "cpu", "CPU"
+
+
 def get_gpu_metrics():
-    """Get current GPU metrics."""
+    """Get current GPU/accelerator metrics."""
+    metrics = {}
+
     try:
+        # Try CUDA metrics first (NVIDIA GPUs)
         gpus = GPUtil.getGPUs()
         if gpus:
             gpu = gpus[0]  # Get first GPU
-            return {
+            metrics = {
                 "gpu_memory_used_mb": gpu.memoryUsed,
                 "gpu_memory_total_mb": gpu.memoryTotal,
                 "gpu_memory_percent": gpu.memoryUtil * 100,
                 "gpu_utilization_percent": gpu.load * 100,
                 "gpu_temperature": gpu.temperature
             }
-    except Exception as e:
-        logger.warning(f"Failed to get GPU metrics: {e}")
-    return {}
+            return metrics
+    except Exception:
+        pass
+
+    # For MPS (Apple Silicon), use torch memory stats
+    device, device_name = get_device()
+    if device == "mps":
+        try:
+            # MPS doesn't provide detailed metrics, but we can track allocated memory
+            if hasattr(torch.mps, "current_allocated_memory"):
+                allocated = torch.mps.current_allocated_memory() / (1024**2)  # Convert to MB
+                metrics = {
+                    "gpu_memory_used_mb": allocated,
+                    "gpu_memory_total_mb": 24576,  # M4 Pro unified memory (approximate)
+                    "gpu_memory_percent": (allocated / 24576) * 100,
+                    "device": "MPS"
+                }
+        except Exception as e:
+            logger.warning(f"Failed to get MPS metrics: {e}")
+
+    return metrics
 
 
 def get_system_metrics():
@@ -206,43 +237,71 @@ def preprocess_dataset(dataset, tokenizer, max_length=1024):
     return processed_dataset
 
 def setup_model_and_tokenizer(model_path: str):
-    """Setup model and tokenizer with quantization."""
+    """Setup model and tokenizer with device-appropriate configuration."""
     logger.info("Loading model and tokenizer...")
-    
+
+    # Detect device
+    device, device_name = get_device()
+    logger.info(f"Using device: {device_name}")
+
     # Load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-    
+
     # Add padding token if it doesn't exist
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    
-    # Load model with 8-bit quantization
-    model = AutoModelForCausalLM.from_pretrained(
-        model_path,
-        load_in_8bit=True,
-        device_map="auto",
-        trust_remote_code=True,
-        torch_dtype=torch.bfloat16,
-    )
-    
-    # Prepare model for k-bit training
-    model = prepare_model_for_kbit_training(model)
-    
+
+    # Device-specific model loading
+    if device == "cuda":
+        # CUDA: Use 8-bit quantization for memory efficiency
+        logger.info("Loading with 8-bit quantization for CUDA...")
+        model = AutoModelForCausalLM.from_pretrained(
+            model_path,
+            load_in_8bit=True,
+            device_map="auto",
+            trust_remote_code=True,
+            torch_dtype=torch.bfloat16,
+        )
+        model = prepare_model_for_kbit_training(model)
+
+    elif device == "mps":
+        # MPS (Apple Silicon): 8-bit quantization not supported, use float16
+        logger.info("Loading for MPS (Apple Silicon) without quantization...")
+        logger.warning("8-bit quantization not available on MPS. Using float16 instead.")
+        logger.warning("This will use more memory (~14GB for Qwen2.5-7B).")
+
+        model = AutoModelForCausalLM.from_pretrained(
+            model_path,
+            trust_remote_code=True,
+            torch_dtype=torch.float16,  # Use float16 for MPS
+            low_cpu_mem_usage=True,
+        )
+        model = model.to(device)
+
+    else:
+        # CPU: Load in float32 (slower but compatible)
+        logger.warning("Loading on CPU. This will be very slow.")
+        model = AutoModelForCausalLM.from_pretrained(
+            model_path,
+            trust_remote_code=True,
+            torch_dtype=torch.float32,
+        )
+
     # Setup LoRA configuration
     lora_config = LoraConfig(
         r=8,                              # Rank
         lora_alpha=32,                   # Alpha parameter
-        target_modules=["q_proj", "v_proj", "k_proj", "o_proj", 
+        target_modules=["q_proj", "v_proj", "k_proj", "o_proj",
                        "gate_proj", "up_proj", "down_proj"],  # Target modules for Qwen
         lora_dropout=0.05,              # Dropout
         bias="none",                     # Bias type
         task_type=TaskType.CAUSAL_LM    # Task type
     )
-    
+
     # Apply LoRA
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
-    
+
     return model, tokenizer
 
 def compute_metrics(eval_pred):

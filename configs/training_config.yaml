@@ -33,10 +33,18 @@ training:
   gradient_accumulation_steps: 2
   warmup_steps: 100
   max_length: 1024
-  
+
   # Mixed precision
   bf16: true
   fp16: false
+
+  # macOS/Apple Silicon specific (automatically applied when MPS detected)
+  macos:
+    batch_size: 4              # Reduced for 24GB unified memory
+    gradient_accumulation_steps: 4  # Compensate for smaller batch size
+    fp16: true                 # Use FP16 instead of BF16 for MPS
+    bf16: false
+    max_length: 512            # Reduced sequence length to save memory
   
   # Logging and saving
   logging_steps: 20

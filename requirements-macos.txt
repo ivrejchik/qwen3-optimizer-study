@@ -1,0 +1,51 @@
+# macOS/Apple Silicon Requirements for Qwen3 Optimizer Study
+# Install with: pip install -r requirements-macos.txt
+
+# Core ML libraries (PyTorch for Apple Silicon)
+--index-url https://download.pytorch.org/whl/cpu
+torch>=2.5.0
+torchvision>=0.20.0
+torchaudio>=2.5.0
+
+# Hugging Face ecosystem
+transformers>=4.40.0
+datasets>=2.18.0
+tokenizers>=0.15.0
+accelerate>=0.28.0
+peft>=0.10.0
+evaluate>=0.4.1
+
+# Optimizers (adabound may need special handling)
+adabound>=0.0.5
+
+# Data processing
+numpy>=1.24.0
+pandas>=2.0.0
+scipy>=1.10.0
+
+# Visualization and analysis
+matplotlib>=3.7.0
+seaborn>=0.12.0
+plotly>=5.17.0
+jupyter>=1.0.0
+notebook>=7.0.0
+
+# Configuration and utilities
+pyyaml>=6.0
+tqdm>=4.65.0
+tensorboard>=2.15.0
+
+# System utilities
+psutil>=5.9.0
+
+# Development tools
+pytest>=7.4.0
+black>=23.0.0
+isort>=5.12.0
+flake8>=6.0.0
+
+# NOTE: The following are NOT included for macOS:
+# - bitsandbytes (CUDA-only, 8-bit quantization not supported on MPS)
+# - flash-attn (CUDA-only)
+# - gpustat (NVIDIA GPU monitoring only)
+# - wandb (optional, install separately if needed)

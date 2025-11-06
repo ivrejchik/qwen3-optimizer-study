@@ -28,15 +28,36 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def get_gpu_memory():
-    """Get current GPU memory usage."""
+def get_device():
+    """Detect and return the appropriate device."""
     if torch.cuda.is_available():
+        return "cuda"
+    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return "mps"
+    else:
+        return "cpu"
+
+
+def get_gpu_memory():
+    """Get current GPU/accelerator memory usage."""
+    device = get_device()
+
+    if device == "cuda":
         try:
             gpu = GPUtil.getGPUs()[0] if GPUtil.getGPUs() else None
             if gpu:
                 return gpu.memoryUsed, gpu.memoryTotal
         except:
             pass
+
+    elif device == "mps":
+        try:
+            if hasattr(torch.mps, "current_allocated_memory"):
+                allocated = torch.mps.current_allocated_memory() / (1024**2)  # MB
+                return allocated, 24576  # M4 Pro unified memory
+        except:
+            pass
+
     return 0, 0
 
 def create_prompt(example: Dict[str, Any]) -> str:
@@ -67,24 +88,46 @@ def evaluate_model(
     if tokenizer_path is None:
         tokenizer_path = model_path
     
+    # Detect device
+    device = get_device()
+    logger.info(f"Using device: {device}")
+
     # Load model and tokenizer
     logger.info(f"Loading model from: {model_path}")
-    model = AutoModelForCausalLM.from_pretrained(
-        model_path,
-        device_map="auto",
-        torch_dtype=torch.bfloat16,
-        trust_remote_code=True
-    )
-    
+
+    # Device-specific loading
+    if device == "cuda":
+        model = AutoModelForCausalLM.from_pretrained(
+            model_path,
+            device_map="auto",
+            torch_dtype=torch.bfloat16,
+            trust_remote_code=True
+        )
+    elif device == "mps":
+        model = AutoModelForCausalLM.from_pretrained(
+            model_path,
+            torch_dtype=torch.float16,
+            trust_remote_code=True,
+            low_cpu_mem_usage=True
+        )
+        model = model.to(device)
+    else:
+        model = AutoModelForCausalLM.from_pretrained(
+            model_path,
+            torch_dtype=torch.float32,
+            trust_remote_code=True
+        )
+        model = model.to(device)
+
     tokenizer = AutoTokenizer.from_pretrained(
         tokenizer_path,
         trust_remote_code=True
     )
-    
+
     # Ensure we have padding token
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    
+
     model.eval()
     
     # Evaluation metrics
