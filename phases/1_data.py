@@ -44,14 +44,18 @@ def download_dataset():
         logger.info(f"Dataset splits: {list(dataset.keys())}")
         for split_name, split_data in dataset.items():
             logger.info(f"  {split_name}: {len(split_data)} examples")
-        
-        # Show sample
-        sample = dataset['train'][0]
-        logger.info("Sample question:")
-        logger.info(f"  Question: {sample['question']['stem']}")
-        logger.info(f"  Choices: {[choice['text'] for choice in sample['question']['choices']]}")
-        logger.info(f"  Answer: {sample['answerKey']}")
-        
+
+        # Show sample (safe access)
+        try:
+            sample = dataset['train'][0]
+            if isinstance(sample.get('question'), dict):
+                logger.info("Sample question:")
+                logger.info(f"  Question: {sample['question']['stem']}")
+                logger.info(f"  Choices: {[choice['text'] for choice in sample['question']['choices']]}")
+                logger.info(f"  Answer: {sample['answerKey']}")
+        except Exception as e:
+            logger.warning(f"Could not display sample (non-critical): {e}")
+
         return True
         
     except Exception as e:
@@ -79,11 +83,26 @@ def download_model():
         
         # Download model (with proper device handling)
         logger.info("Downloading model...")
+
+        # Detect device and choose appropriate dtype
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            # macOS with Apple Silicon - use float16
+            logger.info("Detected MPS (Apple Silicon), using float16")
+            dtype = torch.float16
+        elif torch.cuda.is_available():
+            # CUDA - use bfloat16 if available
+            logger.info("Detected CUDA, using bfloat16")
+            dtype = torch.bfloat16
+        else:
+            # CPU - use float32
+            logger.info("Using CPU, using float32")
+            dtype = torch.float32
+
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             trust_remote_code=True,
-            torch_dtype=torch.bfloat16,
-            device_map="cpu"  # Load to CPU first to avoid GPU memory issues
+            dtype=dtype,  # Updated from torch_dtype (deprecated)
+            low_cpu_mem_usage=True
         )
         
         # Save model
