@@ -131,7 +131,7 @@ def download_model():
 def verify_downloads():
     """Verify that all downloads completed successfully."""
     logger.info("Verifying downloads...")
-    
+
     # Check dataset
     dataset_path = Path("./data/commonsense_qa")
     if dataset_path.exists() and (dataset_path / "dataset_info.json").exists():
@@ -140,20 +140,32 @@ def verify_downloads():
     else:
         logger.error("✗ Dataset verification failed")
         dataset_ok = False
-    
-    # Check model
+
+    # Check model - verify essential files exist
     model_path = Path("./models/qwen3_8b")
-    required_files = ["config.json", "tokenizer.json", "tokenizer_config.json"]
-    
+    required_files = ["config.json", "tokenizer_config.json"]
+
     model_ok = True
+
+    # Check for required files
     for file_name in required_files:
         if not (model_path / file_name).exists():
             logger.error(f"✗ Missing model file: {file_name}")
             model_ok = False
-    
+
+    # Check for model weights (either safetensors or bin files)
+    has_weights = (
+        list(model_path.glob("*.safetensors")) or
+        list(model_path.glob("*.bin"))
+    )
+
+    if not has_weights:
+        logger.error("✗ No model weight files found (.safetensors or .bin)")
+        model_ok = False
+
     if model_ok:
         logger.info("✓ Model verification passed")
-    
+
     return dataset_ok and model_ok
 
 def get_disk_usage():
