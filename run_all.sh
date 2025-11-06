@@ -79,9 +79,23 @@ check_conda() {
 
 # Check if we're in the right environment
 check_environment() {
-    if [[ "$CONDA_DEFAULT_ENV" != "qwen_optim" ]] && [[ "$SKIP_ENV" == false ]]; then
+    # Check for conda environment
+    if [[ -n "$CONDA_DEFAULT_ENV" ]] && [[ "$CONDA_DEFAULT_ENV" != "qwen_optim" ]] && [[ "$SKIP_ENV" == false ]]; then
         print_warning "Not in qwen_optim environment. Run 'conda activate qwen_optim' first."
         print_warning "Or use --skip-env flag if you're using a different environment."
+        exit 1
+    fi
+
+    # Check for venv (common on macOS)
+    if [[ -z "$CONDA_DEFAULT_ENV" ]] && [[ -n "$VIRTUAL_ENV" ]]; then
+        print_success "Using Python virtual environment: $(basename $VIRTUAL_ENV)"
+        return 0
+    fi
+
+    # If neither conda nor venv, warn but continue with --skip-env
+    if [[ -z "$CONDA_DEFAULT_ENV" ]] && [[ -z "$VIRTUAL_ENV" ]] && [[ "$SKIP_ENV" == false ]]; then
+        print_warning "No virtual environment detected. Use --skip-env to continue anyway."
+        print_warning "Recommended: create a venv with 'python -m venv venv && source venv/bin/activate'"
         exit 1
     fi
 }
@@ -92,10 +106,25 @@ log_system_info() {
     echo "Date: $(date)"
     echo "User: $(whoami)"
     echo "Hostname: $(hostname)"
+    echo "OS: $(uname -s) $(uname -m)"
     echo "Python: $(python --version 2>&1 || echo 'Not found')"
     echo "PyTorch: $(python -c 'import torch; print(torch.__version__)' 2>/dev/null || echo 'Not installed')"
+
+    # Check for different accelerators
     echo "CUDA available: $(python -c 'import torch; print(torch.cuda.is_available())' 2>/dev/null || echo 'Unknown')"
-    echo "GPU count: $(python -c 'import torch; print(torch.cuda.device_count())' 2>/dev/null || echo 'Unknown')"
+    echo "MPS available: $(python -c 'import torch; print(torch.backends.mps.is_available() if hasattr(torch.backends, \"mps\") else False)' 2>/dev/null || echo 'Unknown')"
+
+    # Determine which device will be used
+    echo "Device: $(python -c '
+import torch
+if torch.cuda.is_available():
+    print(f\"CUDA ({torch.cuda.device_count()} GPUs)\")
+elif hasattr(torch.backends, \"mps\") and torch.backends.mps.is_available():
+    print(\"MPS (Apple Silicon)\")
+else:
+    print(\"CPU\")
+' 2>/dev/null || echo 'Unknown')"
+
     echo "Seed: $SEED"
     echo ""
 }

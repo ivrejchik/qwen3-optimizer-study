@@ -30,6 +30,41 @@ cd qwen3-optimizer-study
 bash run_all.sh
 ```
 
+## 🍎 macOS / Apple Silicon Support
+
+**NEW**: Full support for Apple M-series chips (M1/M2/M3/M4) with Metal Performance Shaders (MPS)!
+
+### Quick Start for macOS
+
+```bash
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# Install macOS-specific dependencies
+pip install -r requirements-macos.txt
+
+# Login to Hugging Face
+huggingface-cli login
+
+# Run pipeline (automatically detects MPS)
+bash run_all.sh
+```
+
+### What's Different on macOS?
+
+- ✅ **Automatic MPS Detection**: Uses Metal Performance Shaders for GPU acceleration
+- ✅ **No 8-bit Quantization**: Uses FP16 instead (8-bit not yet supported on MPS)
+- ✅ **Optimized Batch Sizes**: Reduced to 4 (from 8) for 24GB unified memory
+- ✅ **No CUDA Dependencies**: Cleaner installation without bitsandbytes/flash-attention
+
+### Memory Usage on Apple Silicon
+
+- **Model Loading**: ~14GB for Qwen2.5-7B in FP16
+- **Training Peak**: ~18-20GB with batch size 4
+- **Recommended**: 24GB+ unified memory (M3 Pro/Max, M4 Pro/Max)
+- **Works on**: 16GB M-series (reduce batch size to 2)
+
 ## 📋 Requirements
 
 ### Hardware
