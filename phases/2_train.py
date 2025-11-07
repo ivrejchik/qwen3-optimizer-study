@@ -24,6 +24,7 @@ from transformers import (
     TrainingArguments,
     Trainer,
     DataCollatorForLanguageModeling,
+    TrainerCallback,
     set_seed
 )
 from peft import (
@@ -132,10 +133,11 @@ def get_system_metrics():
     return {}
 
 
-class MetricsTrackingCallback:
+class MetricsTrackingCallback(TrainerCallback):
     """Callback to track GPU and system metrics during training."""
 
     def __init__(self, output_dir: str):
+        super().__init__()
         self.output_dir = output_dir
         self.metrics_log = []
         self.start_time = time.time()
