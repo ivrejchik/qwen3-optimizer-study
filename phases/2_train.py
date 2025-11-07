@@ -249,10 +249,10 @@ def preprocess_dataset(dataset, tokenizer, max_length=1024):
             max_length=max_length,
             return_tensors=None
         )
-        
-        # Set labels for language modeling
-        tokenized["labels"] = tokenized["input_ids"].copy()
-        
+
+        # Set labels for language modeling (create proper copy of input_ids)
+        tokenized["labels"] = [ids[:] for ids in tokenized["input_ids"]]
+
         return tokenized
     
     # Process dataset
@@ -395,7 +395,7 @@ def train_model(
     data_collator = DataCollatorForLanguageModeling(
         tokenizer=tokenizer,
         mlm=False,
-        pad_to_multiple_of=8
+        pad_to_multiple_of=None  # Let it pad naturally without forcing multiple of 8
     )
     
     # Get optimizer class
