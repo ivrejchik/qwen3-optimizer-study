@@ -347,6 +347,57 @@ def compute_metrics(eval_pred):
     
     return {"accuracy": accuracy}
 
+
+class CustomDataCollator:
+    """Custom data collator that properly pads input_ids and labels."""
+
+    def __init__(self, tokenizer, pad_to_multiple_of=None):
+        self.tokenizer = tokenizer
+        self.pad_to_multiple_of = pad_to_multiple_of
+
+    def __call__(self, features):
+        # Extract input_ids and labels
+        input_ids = [f["input_ids"] for f in features]
+        labels = [f["labels"] for f in features]
+
+        # Find max length in this batch
+        max_length = max(len(ids) for ids in input_ids)
+
+        # Pad to multiple if specified
+        if self.pad_to_multiple_of is not None:
+            max_length = ((max_length + self.pad_to_multiple_of - 1) //
+                         self.pad_to_multiple_of * self.pad_to_multiple_of)
+
+        # Pad input_ids and labels
+        padded_input_ids = []
+        padded_labels = []
+        attention_mask = []
+
+        pad_token_id = self.tokenizer.pad_token_id
+
+        for ids, labs in zip(input_ids, labels):
+            padding_length = max_length - len(ids)
+
+            # Pad input_ids
+            padded_ids = ids + [pad_token_id] * padding_length
+            padded_input_ids.append(padded_ids)
+
+            # Pad labels (use -100 for padding tokens so they're ignored in loss)
+            padded_labs = labs + [-100] * padding_length
+            padded_labels.append(padded_labs)
+
+            # Create attention mask (1 for real tokens, 0 for padding)
+            mask = [1] * len(ids) + [0] * padding_length
+            attention_mask.append(mask)
+
+        # Convert to tensors
+        return {
+            "input_ids": torch.tensor(padded_input_ids, dtype=torch.long),
+            "labels": torch.tensor(padded_labels, dtype=torch.long),
+            "attention_mask": torch.tensor(attention_mask, dtype=torch.long)
+        }
+
+
 def train_model(
     model,
     tokenizer,
@@ -391,11 +442,10 @@ def train_model(
         data_seed=seed,
     )
     
-    # Data collator
-    data_collator = DataCollatorForLanguageModeling(
+    # Data collator - use custom collator for proper padding
+    data_collator = CustomDataCollator(
         tokenizer=tokenizer,
-        mlm=False,
-        pad_to_multiple_of=None  # Let it pad naturally without forcing multiple of 8
+        pad_to_multiple_of=None  # Let it pad naturally
     )
     
     # Get optimizer class
