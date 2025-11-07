@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Dict, Any
 
 import torch
+from torch.optim import AdamW
 import numpy as np
 import psutil
 import GPUtil
@@ -25,7 +26,6 @@ from transformers import (
     DataCollatorForLanguageModeling,
     set_seed
 )
-from transformers.optimization import AdamW
 from peft import (
     LoraConfig,
     get_peft_model,
