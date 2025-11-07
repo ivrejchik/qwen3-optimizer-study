@@ -132,14 +132,25 @@ def verify_downloads():
     """Verify that all downloads completed successfully."""
     logger.info("Verifying downloads...")
 
-    # Check dataset
+    # Check dataset - look for dataset_dict.json or any split folders
     dataset_path = Path("./data/commonsense_qa")
-    if dataset_path.exists() and (dataset_path / "dataset_info.json").exists():
+    dataset_ok = False
+
+    if dataset_path.exists():
+        # Check for dataset_dict.json (created by save_to_disk for DatasetDict)
+        if (dataset_path / "dataset_dict.json").exists():
+            dataset_ok = True
+        # Or check if split folders exist (train, validation, test)
+        elif any((dataset_path / split).is_dir() for split in ["train", "validation", "test"]):
+            dataset_ok = True
+
+    if dataset_ok:
         logger.info("✓ Dataset verification passed")
-        dataset_ok = True
     else:
         logger.error("✗ Dataset verification failed")
-        dataset_ok = False
+        logger.error(f"  Expected dataset at: {dataset_path}")
+        if dataset_path.exists():
+            logger.error(f"  Found files: {list(dataset_path.iterdir())}")
 
     # Check model - verify essential files exist
     model_path = Path("./models/qwen3_8b")
