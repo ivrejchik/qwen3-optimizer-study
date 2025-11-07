@@ -376,7 +376,7 @@ def train_model(
         bf16=True,
         logging_steps=20,
         logging_dir=f"{output_dir}/logs",
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",  # Updated from evaluation_strategy
         save_strategy="epoch",
         save_total_limit=2,
         load_best_model_at_end=True,
