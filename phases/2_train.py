@@ -176,16 +176,40 @@ class MetricsTrackingCallback:
 
 def create_prompt(example: Dict[str, Any]) -> str:
     """Create a formatted prompt from a CommonsenseQA example."""
-    question = example["question"]["stem"]
-    choices = example["question"]["choices"]
-    
-    # Format choices as A, B, C, D, E
-    choice_text = "\n".join([
-        f"{chr(65 + i)}. {choice['text']}" 
-        for i, choice in enumerate(choices)
-    ])
-    
-    prompt = f"{question}\n{choice_text}\nAnswer:"
+    # Handle different data structures
+    question_data = example.get("question", "")
+
+    # If question is a dict with 'stem' and 'choices'
+    if isinstance(question_data, dict):
+        question = question_data["stem"]
+        choices = question_data["choices"]
+
+        # Format choices as A, B, C, D, E
+        choice_text = "\n".join([
+            f"{chr(65 + i)}. {choice['text']}"
+            for i, choice in enumerate(choices)
+        ])
+    else:
+        # If question is already a string, use it directly
+        # Also get choices from top level if available
+        question = question_data
+        choices_data = example.get("choices", {})
+
+        if isinstance(choices_data, dict) and "text" in choices_data:
+            # Choices is a dict with 'text' and 'label' lists
+            choice_text = "\n".join([
+                f"{choices_data['label'][i]}. {choices_data['text'][i]}"
+                for i in range(len(choices_data["text"]))
+            ])
+        else:
+            # No structured choices available, just use question
+            choice_text = ""
+
+    if choice_text:
+        prompt = f"{question}\n{choice_text}\nAnswer:"
+    else:
+        prompt = f"{question}\nAnswer:"
+
     return prompt
 
 def preprocess_dataset(dataset, tokenizer, max_length=1024):
@@ -196,16 +220,20 @@ def preprocess_dataset(dataset, tokenizer, max_length=1024):
         # Create prompts and targets
         prompts = []
         targets = []
-        
+
         for i in range(len(examples["id"])):
             example = {
                 "question": examples["question"][i],
                 "answerKey": examples["answerKey"][i]
             }
-            
+
+            # Add choices if available
+            if "choices" in examples:
+                example["choices"] = examples["choices"][i]
+
             prompt = create_prompt(example)
             target = example["answerKey"]
-            
+
             # Combine prompt and target
             full_text = f"{prompt} {target}"
             prompts.append(full_text)
