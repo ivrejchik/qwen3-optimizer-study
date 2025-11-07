@@ -1,0 +1,48 @@
+# Core ML libraries
+torch>=2.2.0
+torchvision>=0.17.0
+torchaudio>=2.2.0
+
+# Hugging Face ecosystem
+transformers>=4.40.0
+datasets>=2.18.0
+tokenizers>=0.15.0
+accelerate>=0.28.0
+peft>=0.10.0
+evaluate>=0.4.1
+
+# Quantization (bitsandbytes - will work if CUDA available, otherwise ignored)
+bitsandbytes>=0.43.0
+
+# Note: flash-attn excluded due to CUDA version compatibility issues
+# It's optional and not required for the project to work
+
+# Optimizers
+adabound>=0.0.5
+
+# Data processing
+numpy>=1.24.0
+pandas>=2.0.0
+scipy>=1.10.0
+
+# Visualization and analysis
+matplotlib>=3.7.0
+seaborn>=0.12.0
+plotly>=5.17.0
+jupyter>=1.0.0
+notebook>=7.0.0
+
+# Configuration and utilities
+pyyaml>=6.0
+tqdm>=4.65.0
+tensorboard>=2.15.0
+
+# Development tools
+pytest>=7.4.0
+black>=23.0.0
+isort>=5.12.0
+flake8>=6.0.0
+
+# System utilities
+psutil>=5.9.0
+gpustat>=1.1.0
