@@ -308,6 +308,9 @@ def setup_model_and_tokenizer(model_path: str):
         )
         model = model.to(device)
 
+        # Enable gradient checkpointing for MPS to save memory
+        model.gradient_checkpointing_enable()
+
     else:
         # CPU: Load in float32 (slower but compatible)
         logger.warning("Loading on CPU. This will be very slow.")
@@ -539,9 +542,24 @@ def main():
     parser.add_argument("--max_length", type=int, default=1024, help="Maximum sequence length")
     
     args = parser.parse_args()
-    
+
+    # Detect device and adjust settings for MPS if needed
+    device, device_name = get_device()
+    if device == "mps":
+        # MPS (Apple Silicon) has memory constraints - use optimized settings
+        if args.batch_size == 8:  # If using default, adjust for MPS
+            logger.info("Detected MPS: Adjusting batch_size from 8 to 2 for memory efficiency")
+            args.batch_size = 2
+        if args.gradient_accumulation_steps == 2:  # Compensate with more accumulation
+            logger.info("Detected MPS: Adjusting gradient_accumulation_steps from 2 to 8")
+            args.gradient_accumulation_steps = 8
+        if args.max_length == 1024:  # Reduce sequence length
+            logger.info("Detected MPS: Adjusting max_length from 1024 to 384")
+            args.max_length = 384
+
     logger.info(f"Starting Phase 2: LoRA Fine-tuning with {args.optimizer}")
     logger.info(f"Arguments: {vars(args)}")
+    logger.info(f"Device: {device_name}")
     
     # Create output directory
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
