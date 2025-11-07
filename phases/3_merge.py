@@ -29,7 +29,7 @@ def merge_adapter(base_model_path: str, adapter_path: str, output_path: str, opt
         base_model = AutoModelForCausalLM.from_pretrained(
             base_model_path,
             device_map="cpu",
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
             trust_remote_code=True
         )
         
@@ -84,7 +84,7 @@ def verify_merged_model(model_path: str, optimizer_name: str):
         model = AutoModelForCausalLM.from_pretrained(
             model_path,
             device_map="cpu",
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
             trust_remote_code=True
         )
         tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)

@@ -260,7 +260,7 @@ def setup_model_and_tokenizer(model_path: str):
             load_in_8bit=True,
             device_map="auto",
             trust_remote_code=True,
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
         )
         model = prepare_model_for_kbit_training(model)
 
@@ -273,7 +273,7 @@ def setup_model_and_tokenizer(model_path: str):
         model = AutoModelForCausalLM.from_pretrained(
             model_path,
             trust_remote_code=True,
-            torch_dtype=torch.float16,  # Use float16 for MPS
+            dtype=torch.float16,  # Use float16 for MPS
             low_cpu_mem_usage=True,
         )
         model = model.to(device)
@@ -284,7 +284,7 @@ def setup_model_and_tokenizer(model_path: str):
         model = AutoModelForCausalLM.from_pretrained(
             model_path,
             trust_remote_code=True,
-            torch_dtype=torch.float32,
+            dtype=torch.float32,
         )
 
     # Setup LoRA configuration
