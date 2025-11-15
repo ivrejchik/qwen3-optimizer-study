@@ -176,6 +176,20 @@ class MetricsTrackingCallback(TrainerCallback):
         logger.info(f"GPU metrics saved to: {metrics_path}")
 
 
+class MemoryManagementCallback(TrainerCallback):
+    """Callback to manage memory on MPS devices."""
+
+    def on_evaluate(self, args, state, control, **kwargs):
+        """Clear cache after evaluation to free memory."""
+        device, _ = get_device()
+        if device == "mps":
+            # Clear MPS cache
+            torch.mps.empty_cache()
+            logger.info("Cleared MPS cache after evaluation")
+        elif device == "cuda":
+            torch.cuda.empty_cache()
+
+
 def create_prompt(example: Dict[str, Any]) -> str:
     """Create a formatted prompt from a CommonsenseQA example."""
     # Handle different data structures
@@ -420,13 +434,17 @@ def train_model(
     # Set seeds
     set_seed(seed)
     
+    # Detect device for memory-specific optimizations
+    device, device_name = get_device()
+
     # Training arguments
     training_args = TrainingArguments(
         output_dir=output_dir,
         num_train_epochs=num_epochs,
         per_device_train_batch_size=batch_size,
-        per_device_eval_batch_size=batch_size,
+        per_device_eval_batch_size=1 if device == "mps" else batch_size,  # Smaller eval batch for MPS
         gradient_accumulation_steps=gradient_accumulation_steps,
+        eval_accumulation_steps=4 if device == "mps" else None,  # Limit eval batch accumulation on MPS
         warmup_steps=100,
         learning_rate=learning_rate,
         bf16=True,
@@ -435,9 +453,8 @@ def train_model(
         eval_strategy="epoch",  # Updated from evaluation_strategy
         save_strategy="epoch",
         save_total_limit=2,
-        load_best_model_at_end=True,
-        metric_for_best_model="eval_accuracy",
-        greater_is_better=True,
+        load_best_model_at_end=False,  # Disabled to save memory - no need to reload model
+        prediction_loss_only=True,  # Only compute loss, don't collect predictions (saves memory)
         report_to=["tensorboard"],
         dataloader_pin_memory=False,
         remove_unused_columns=False,
@@ -473,10 +490,12 @@ def train_model(
 
         return optimizer_class(model.parameters(), **optimizer_kwargs)
 
-    # Create metrics tracking callback
+    # Create callbacks
     metrics_callback = MetricsTrackingCallback(output_dir)
+    memory_callback = MemoryManagementCallback()
 
     # Create trainer
+    # Note: compute_metrics is None when prediction_loss_only=True
     trainer = Trainer(
         model=model,
         args=training_args,
@@ -484,9 +503,9 @@ def train_model(
         eval_dataset=eval_dataset,
         tokenizer=tokenizer,
         data_collator=data_collator,
-        compute_metrics=compute_metrics,
+        compute_metrics=None,  # Disabled to save memory (prediction_loss_only=True)
         optimizers=(optimizer_init(), None),  # (optimizer, scheduler)
-        callbacks=[metrics_callback]
+        callbacks=[metrics_callback, memory_callback]
     )
     
     # Train
@@ -501,12 +520,19 @@ def train_model(
     final_gpu_metrics = get_gpu_metrics()
     final_system_metrics = get_system_metrics()
 
+    # Get final eval loss from log history
+    final_eval_loss = None
+    for entry in reversed(trainer.state.log_history):
+        if "eval_loss" in entry:
+            final_eval_loss = entry["eval_loss"]
+            break
+
     # Save training metrics
     metrics = {
         "optimizer": optimizer_name,
         "training_time": training_time,
         "final_loss": trainer.state.log_history[-1].get("train_loss", None),
-        "best_eval_accuracy": trainer.state.best_metric,
+        "final_eval_loss": final_eval_loss,
         "learning_rate": learning_rate,
         "num_epochs": num_epochs,
         "batch_size": batch_size,
@@ -518,9 +544,10 @@ def train_model(
 
     with open(f"{output_dir}/training_metrics.json", "w") as f:
         json.dump(metrics, f, indent=2)
-    
+
     logger.info(f"Training completed in {training_time:.2f} seconds")
-    logger.info(f"Best evaluation accuracy: {trainer.state.best_metric:.4f}")
+    if final_eval_loss is not None:
+        logger.info(f"Final evaluation loss: {final_eval_loss:.4f}")
     
     return trainer
 
