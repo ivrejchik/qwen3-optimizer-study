@@ -460,7 +460,8 @@ def train_model(
         eval_accumulation_steps=4 if device == "mps" else None,  # Limit eval batch accumulation on MPS
         warmup_steps=100,
         learning_rate=learning_rate,
-        bf16=True,
+        fp16=True,
+        bf16=False,
         logging_steps=20,
         logging_dir=f"{output_dir}/logs",
         eval_strategy="epoch",  # Updated from evaluation_strategy

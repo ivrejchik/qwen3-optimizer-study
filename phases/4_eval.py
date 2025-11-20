@@ -60,18 +60,37 @@ def get_gpu_memory():
 
     return 0, 0
 
-def create_prompt_text(example: Dict[str, Any]) -> str:
-    """Create a formatted prompt text from a CommonsenseQA example (without chat template)."""
-    question = example["question"]["stem"]
-    choices = example["question"]["choices"]
+def create_prompt(example: Dict[str, Any]) -> str:
+    """Create a formatted prompt from a CommonsenseQA example."""
+    # Handle different data structures
+    question_data = example.get("question", "")
 
-    # Format choices as A, B, C, D, E
-    choice_text = "\n".join([
-        f"{chr(65 + i)}. {choice['text']}"
-        for i, choice in enumerate(choices)
-    ])
+    # If question is a dict with 'stem' and 'choices'
+    if isinstance(question_data, dict):
+        question = question_data["stem"]
+        choices = question_data["choices"]
 
-    prompt = f"{question}\n{choice_text}\n\nAnswer with only the letter (A, B, C, D, or E)."
+        # Format choices as A, B, C, D, E
+        choice_text = "\n".join([
+            f"{chr(65 + i)}. {choice['text']}"
+            for i, choice in enumerate(choices)
+        ])
+    else:
+        # If question is already a string, use it directly
+        # Also get choices from top level if available
+        question = question_data
+        choices_data = example.get("choices", {})
+
+        if isinstance(choices_data, list):
+            choice_text = "\n".join([
+                f"{chr(65 + i)}. {choice['text']}"
+                for i, choice in enumerate(choices_data)
+            ])
+        else:
+            # Fallback if no choices found
+            choice_text = ""
+
+    prompt = f"{question}\n{choice_text}\nAnswer:"
     return prompt
 
 def evaluate_model(
