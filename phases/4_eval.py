@@ -164,11 +164,11 @@ def evaluate_model(
     with torch.no_grad():
         for i, example in enumerate(tqdm(dataset, desc=f"Evaluating {model_name}")):
             # Create prompt text
-            question_text = create_prompt_text(example)
+            prompt = create_prompt(example)
 
             # Format as chat using Qwen's chat template
             messages = [
-                {"role": "user", "content": question_text}
+                {"role": "user", "content": prompt}
             ]
 
             # Apply chat template

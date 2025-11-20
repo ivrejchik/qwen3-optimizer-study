@@ -13,7 +13,6 @@ evaluate>=0.4.1
 
 # Quantization and optimization
 bitsandbytes>=0.43.0
-flash-attn>=2.5.0
 
 # Optimizers
 adabound>=0.0.5
