@@ -190,8 +190,8 @@ class MemoryManagementCallback(TrainerCallback):
             torch.cuda.empty_cache()
 
 
-def create_prompt(example: Dict[str, Any]) -> str:
-    """Create a formatted prompt from a CommonsenseQA example."""
+def create_prompt_text(example: Dict[str, Any]) -> str:
+    """Create a formatted prompt text from a CommonsenseQA example (without chat template)."""
     # Handle different data structures
     question_data = example.get("question", "")
 
@@ -222,9 +222,9 @@ def create_prompt(example: Dict[str, Any]) -> str:
             choice_text = ""
 
     if choice_text:
-        prompt = f"{question}\n{choice_text}\nAnswer:"
+        prompt = f"{question}\n{choice_text}\n\nAnswer with only the letter (A, B, C, D, or E)."
     else:
-        prompt = f"{question}\nAnswer:"
+        prompt = f"{question}\n\nAnswer with only the letter (A, B, C, D, or E)."
 
     return prompt
 
@@ -233,9 +233,9 @@ def preprocess_dataset(dataset, tokenizer, max_length=1024):
     logger.info("Preprocessing dataset...")
     
     def preprocess_function(examples):
-        # Create prompts and targets
-        prompts = []
-        targets = []
+        # Create prompts using chat template
+        all_input_ids = []
+        all_labels = []
 
         for i in range(len(examples["id"])):
             example = {
@@ -247,27 +247,40 @@ def preprocess_dataset(dataset, tokenizer, max_length=1024):
             if "choices" in examples:
                 example["choices"] = examples["choices"][i]
 
-            prompt = create_prompt(example)
-            target = example["answerKey"]
+            # Get question text
+            question_text = create_prompt_text(example)
+            answer = example["answerKey"]
 
-            # Combine prompt and target
-            full_text = f"{prompt} {target}"
-            prompts.append(full_text)
-            targets.append(target)
-        
-        # Tokenize
-        tokenized = tokenizer(
-            prompts,
-            truncation=True,
-            padding=False,
-            max_length=max_length,
-            return_tensors=None
-        )
+            # Format as chat using Qwen's chat template
+            messages = [
+                {"role": "user", "content": question_text},
+                {"role": "assistant", "content": answer}
+            ]
 
-        # Set labels for language modeling (create proper copy of input_ids)
-        tokenized["labels"] = [ids[:] for ids in tokenized["input_ids"]]
+            # Apply chat template and tokenize
+            # For Qwen models, the tokenizer has a built-in chat template
+            text = tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=False
+            )
 
-        return tokenized
+            # Tokenize the formatted text
+            tokenized = tokenizer(
+                text,
+                truncation=True,
+                max_length=max_length,
+                padding=False,
+                return_tensors=None
+            )
+
+            all_input_ids.append(tokenized["input_ids"])
+            all_labels.append(tokenized["input_ids"][:])  # Labels same as input_ids for causal LM
+
+        return {
+            "input_ids": all_input_ids,
+            "labels": all_labels
+        }
     
     # Process dataset
     processed_dataset = dataset.map(

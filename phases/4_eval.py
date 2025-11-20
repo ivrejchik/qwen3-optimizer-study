@@ -60,18 +60,18 @@ def get_gpu_memory():
 
     return 0, 0
 
-def create_prompt(example: Dict[str, Any]) -> str:
-    """Create a formatted prompt from a CommonsenseQA example."""
+def create_prompt_text(example: Dict[str, Any]) -> str:
+    """Create a formatted prompt text from a CommonsenseQA example (without chat template)."""
     question = example["question"]["stem"]
     choices = example["question"]["choices"]
-    
+
     # Format choices as A, B, C, D, E
     choice_text = "\n".join([
-        f"{chr(65 + i)}. {choice['text']}" 
+        f"{chr(65 + i)}. {choice['text']}"
         for i, choice in enumerate(choices)
     ])
-    
-    prompt = f"{question}\n{choice_text}\nAnswer:"
+
+    prompt = f"{question}\n{choice_text}\n\nAnswer with only the letter (A, B, C, D, or E)."
     return prompt
 
 def evaluate_model(
@@ -144,9 +144,21 @@ def evaluate_model(
     
     with torch.no_grad():
         for i, example in enumerate(tqdm(dataset, desc=f"Evaluating {model_name}")):
-            # Create prompt
-            prompt = create_prompt(example)
-            
+            # Create prompt text
+            question_text = create_prompt_text(example)
+
+            # Format as chat using Qwen's chat template
+            messages = [
+                {"role": "user", "content": question_text}
+            ]
+
+            # Apply chat template
+            prompt = tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True  # Add <|im_start|>assistant\n
+            )
+
             # Tokenize input
             inputs = tokenizer(
                 prompt,
@@ -154,30 +166,36 @@ def evaluate_model(
                 truncation=True,
                 max_length=1024
             ).to(model.device)
-            
+
             # Generate response
             outputs = model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
                 do_sample=False,
                 pad_token_id=tokenizer.eos_token_id,
+                eos_token_id=tokenizer.eos_token_id,
                 temperature=0.0
             )
-            
-            # Extract generated token
+
+            # Extract generated token(s)
             generated_tokens = outputs[0][inputs.input_ids.shape[1]:]
             generated_text = tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
-            
+
             # Get prediction (first character should be A, B, C, D, or E)
-            predicted_answer = generated_text[0].upper() if generated_text else "A"
-            
-            # Ensure prediction is valid
-            if predicted_answer not in ["A", "B", "C", "D", "E"]:
-                predicted_answer = "A"  # Default fallback
-            
+            # Handle cases where model generates extra text
+            predicted_answer = None
+            for char in generated_text:
+                if char.upper() in ["A", "B", "C", "D", "E"]:
+                    predicted_answer = char.upper()
+                    break
+
+            # Fallback if no valid answer found
+            if predicted_answer is None:
+                predicted_answer = "A"
+
             predictions.append(predicted_answer)
             true_labels.append(example["answerKey"])
-            
+
             # Log progress every 100 examples
             if (i + 1) % 100 == 0:
                 logger.info(f"Progress: {i + 1}/{total_examples}")
